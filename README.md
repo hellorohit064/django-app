@@ -1,30 +1,33 @@
-# CI/CD Pipeline with Terraform, Jenkins, Docker & SonarQube
 
-This project sets up a CI/CD pipeline using:
-- **Terraform** to provision an AWS EC2 instance (t3.large)
-- **Jenkins** for build automation
-- **SonarQube** for static code analysis
+
+This project demonstrates how to build a complete CI/CD pipeline using:
+- **Terraform** to provision EC2
+- **Jenkins** for automation
+- **SonarQube** for static analysis
 - **Docker** for containerization
-- **Trivy** for security scanning
+- **Trivy** for scanning
+- **EKS (Elastic Kubernetes Service)** for deployment
 
 ---
 
-## 🚀 Step 1: Provision EC2 Using Terraform
+## 🔧 Step 1: Provision EC2 Instance Using Terraform
 
 ```hcl
 resource "aws_instance" "jenkins_server" {
-  ami           = "ami-xxxxxxx"        # Use Ubuntu AMI ID
+  ami           = "ami-xxxxxxx"
   instance_type = "t3.large"
   key_name      = "your-key"
   tags = {
     Name = "Jenkins-Server"
   }
 }
+```
 
+---
 
-🔧 Step 2: Install Jenkins and Fetch Admin Password
-SSH into your EC2 instance and run:
+## ⚙️ Step 2: Install Jenkins on EC2
 
+```bash
 sudo apt update && sudo apt install -y openjdk-17-jdk
 wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -
 sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
@@ -32,119 +35,153 @@ sudo apt update
 sudo apt install -y jenkins
 sudo systemctl start jenkins
 sudo systemctl enable jenkins
-
-# Fetch Jenkins Admin Password
 sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+```
 
+---
 
-🐳 Step 3: Install SonarQube via Docker
+## 🐳 Step 3: Install SonarQube via Docker
+
+```bash
 docker run -d --name sonarqube -p 9000:9000 sonarqube:community
+```
 
+---
 
+## 🔌 Step 4: Install Jenkins Plugins
 
+Go to: `Manage Jenkins → Plugins → Available`, then install:
 
-🧩 Step 4: Jenkins Plugin Installation
-Navigate to Manage Jenkins → Plugins → Available and install the following plugins:
+- Eclipse Temurin Installer
+- SonarQube Scanner
+- Sonar Quality Gates
+- Quality Gate
+- NodeJS
+- All Docker-related plugins
+- Stage View
+- Pipeline
+- Kubernetes CLI and Kubernetes Credentials
 
-Eclipse Temurin Installer
+---
 
-SonarQube Scanner
+## 🧰 Step 5: Configure Jenkins Tools
 
-Sonar Quality Gates
+Navigate to: `Manage Jenkins → Global Tool Configuration`
 
-Quality Gates
+- **NodeJS**:  
+  - Name: `node16`  
+  - Version: `21.20` from nodejs.org
 
-NodeJS
+- **JDK**:  
+  - Name: `jdk17`  
+  - Install from Adoptium  
+  - Version: `jdk-17.0.8.1+1`
 
-All Docker-related plugins
+- **Docker**:  
+  - Name: `docker`  
+  - Install from docker.com
 
-Stage View
+- **SonarQube Scanner**:  
+  - Name: `sonarqube-scanner`  
+  - Install from Maven Central
 
-Pipeline
+---
 
+## 🔒 Step 6: Configure SonarQube with Jenkins
 
+1. Login to `http://<sonarqube-ip>:9000`  
+   - Username: `admin`  
+   - Password: `admin` (change it)
 
-🛠️ Step 5: Jenkins Tool Configuration
-Go to Manage Jenkins → Global Tool Configuration and configure:
+2. Create a token via:  
+   `Administration → Security → Generate Token`
 
-✅ Node.js:
-Name: node16
+3. Add to Jenkins:  
+   `Manage Jenkins → Credentials → Global → Add Credentials`  
+   - **Kind**: Secret text  
+   - **ID**: `SonarQube-Token`  
+   - **Secret**: Paste token
 
-Install automatically
+4. Add SonarQube server:
+   - Go to: `Manage Jenkins → Configure System`
+   - Name: `SonarQube-Server`
+   - URL: `http://<sonarqube-ip>:9000`
+   - Token: `SonarQube-Token`
 
-Version: 21.20.0 from nodejs.org
+5. Create Quality Gate in SonarQube Dashboard
 
-✅ JDK:
-Name: jdk17
+6. Add Webhook:  
+   - Name: `jenkins`  
+   - URL: `http://<jenkins-ip>:8080/sonarqube-webhook/`
 
-Install from adoptium.net
+---
 
-Version: jdk-17.0.8.1+1
+## ☸️ Step 7: Install kubectl on EC2 (Master Machine)
 
-✅ Docker:
-Name: docker
+```bash
+curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.19.6/2021-01-05/bin/linux/amd64/kubectl
+chmod +x ./kubectl
+sudo mv ./kubectl /usr/local/bin
+kubectl version --short --client
+```
 
-Install automatically from docker.com
+---
 
-✅ SonarQube Scanner:
-Name: sonarqube-scanner
+## 📦 Step 8: Install AWS CLI
 
-Install automatically from Maven Central (latest version)
+```bash
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+sudo apt install unzip
+unzip awscliv2.zip
+sudo ./aws/install
+aws configure
+```
 
-⚙️ Step 6: SonarQube Setup & Integration with Jenkins
-🔐 Generate Token in SonarQube
-Go to http://<sonarqube-ip>:9000
+---
 
-Login with:
+## 📥 Step 9: Install eksctl
 
-Username: admin
+```bash
+curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+cd /tmp
+sudo mv /tmp/eksctl /bin
+eksctl version
+```
 
-Password: admin (change it)
+---
 
-Go to Administration → Security → Tokens → Generate Token
+## ☸️ Step 10: Create EKS Cluster
 
-🧾 Add Token to Jenkins
-Go to Manage Jenkins → Credentials → Global → Add Credentials
+```bash
+eksctl create cluster --name swiggy-clone --region eu-north-1 --node-type t3.medium --nodes 3
+```
 
-Kind: Secret text
+Check cluster status:
 
-ID: SonarQube-Token
+```bash
+kubectl get nodes
+kubectl get svc
+```
 
-Secret: Paste the token
+> 📁 Copy your `~/.kube/config` to your **local Jenkins machine** for integration.
 
-🖇️ Configure SonarQube Server in Jenkins
-Go to Manage Jenkins → Configure System
+---
 
-Scroll to SonarQube Servers
+## 🔐 Step 11: Add Kubernetes Credentials to Jenkins
 
-Name: SonarQube-Server
+1. Go to `Manage Jenkins → Credentials → Global → Add Credentials`
+   - Kind: `File`
+   - Scope: Global
+   - ID: `kubernetes`
+   - Upload your `kube/config` file
 
-Server URL: http://<sonarqube-ip>:9000
+---
 
-Token: Use SonarQube-Token from credentials
+## 🤖 Step 12: Jenkins Pipeline Script
 
+> Save the following pipeline under a Jenkins item named `swiggy-cicd`
 
-📊 Step 7: Configure SonarQube Quality Gate & Webhook
-➕ Quality Gate:
-Go to SonarQube Dashboard → Quality Gates → Create
-
-Name: SonarQube-Quality-Gate
-
-🔔 Webhook:
-Go to Administration → Configuration → Webhooks
-
-Name: jenkins
-
-URL: http://<jenkins-ip>:8080/sonarqube-webhook/
-
-🔄 Step 8: Jenkins Pipeline - CI/CD
-✅ Create New Item:
-Name: swiggy-cicd
-
-Type: Pipeline
-
-📜 Pipeline Script:
-
+```groovy
 pipeline {
     agent any
 
@@ -209,32 +246,74 @@ pipeline {
                 sh "trivy image ashfaque9x/swiggy-clone:latest > trivyimage.txt"
             }
         }
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    dir('Kubernetes') {
+                        kubeconfig(credentialsId: 'kubernetes', serverUrl: '') {
+                            sh 'kubectl delete --all pods'
+                            sh 'kubectl apply -f deployment.yaml'
+                            sh 'kubectl apply -f service.yaml'
+                        }
+                    }
+                }
+            }
+        }
     }
 }
+```
 
-🐳 Step 9: Push to DockerHub
-🧾 DockerHub Token:
-Go to DockerHub → Settings → Security → Generate Access Token
+> Save `deployment.yaml` and `service.yaml` under a folder called `Kubernetes` in your GitHub repo.
 
-🧾 Add Credential in Jenkins:
-Go to Manage Jenkins → Credentials → Global → Add Credentials
+---
 
-Kind: Username with password
+## ✅ Step 13: Setup GitHub Trigger
 
-Username: DockerHub username
+1. Go to Jenkins Pipeline > Configure
+   - ✅ Check **GitHub project** → enter repo URL
+   - ✅ Under **Build Triggers** → select `GitHub hook trigger for GITScm polling`
 
-Password: Paste access token
+2. On GitHub:
+   - Settings → Webhooks → Add webhook
+   - Payload URL: `http://<jenkins-ip>:8080/github-webhook/`
+   - Content type: `application/json`
 
-ID: dockerhub
+3. Make a change in the repo to test the CI/CD pipeline trigger.
 
-✅ Final Steps
-Click on Build Now in Jenkins
+---
 
-Monitor pipeline stages
+## ✅ Outcome
 
-Visit SonarQube dashboard to verify the analysis
+- Code gets pulled
+- SonarQube scan runs
+- Quality gate passes
+- Docker image built and pushed to DockerHub
+- Trivy scans performed
+- Deployed to EKS via Jenkins pipeline
 
-Verify Docker image is pushed to DockerHub
+---
 
+## 📎 Directory Structure
 
+```bash
+.
+├── Kubernetes/
+│   ├── deployment.yaml
+│   └── service.yaml
+├── README.md
+```
 
+---
+
+## 📚 References
+
+- [Jenkins Docs](https://www.jenkins.io/doc/)
+- [SonarQube](https://www.sonarqube.org/)
+- [Trivy](https://github.com/aquasecurity/trivy)
+- [DockerHub](https://hub.docker.com/)
+- [AWS EKS](https://docs.aws.amazon.com/eks/)
+- [eksctl](https://eksctl.io/)
+```
+</pre>
+
+Let me know if you want me to create a `.md` file or zip it for download, or generate a **PDF version** from this markdown.
